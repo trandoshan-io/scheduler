@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -16,8 +17,12 @@ const (
 	doneQueue = "done"
 )
 
+//TODO: route message based on url ? like building a BTREE to dispatch message to crawler in a efficient manner
+// this will allow high performance when dealing with a lot of urls (will reduce check complexity)
 func main() {
-	log.Println("Initializing crawler")
+	log.Println("Initializing scheduler")
+
+	var crawledUrls = map[string]string{}
 
 	// load .env
 	if err := godotenv.Load(); err != nil {
@@ -30,6 +35,11 @@ func main() {
 	if startupDelay := os.Getenv("STARTUP_DELAY"); startupDelay != "" {
 		val, _ := strconv.Atoi(startupDelay)
 		time.Sleep(time.Duration(val) * time.Second)
+	}
+
+	// build list of forbidden extensions
+	var forbiddenExtensions = []string{
+		".iso", ".xhtml", ".exe", ".css", ".img", ".png", ".jpg", ".jpeg", ".js", ".pdf",
 	}
 
 	prefetch, err := strconv.Atoi(os.Getenv("AMQP_PREFETCH"))
@@ -49,11 +59,10 @@ func main() {
 	if err != nil {
 		log.Fatal("Unable to create consumer: ", err.Error())
 	}
-	log.Println("Consumer initialized successfully")
-
-	if err := consumer.Consume(doneQueue, true, handleMessages(publisher)); err != nil {
+	if err := consumer.Consume(doneQueue, true, handleMessages(publisher, forbiddenExtensions, crawledUrls)); err != nil {
 		log.Fatal("Unable to consume message: ", err.Error())
 	}
+	log.Println("Consumer initialized successfully")
 
 	//TODO: better way
 	select {}
@@ -61,28 +70,42 @@ func main() {
 	_ = consumer.Shutdown()
 }
 
-func handleMessages(publisher tamqp.Publisher) func(deliveries <-chan amqp.Delivery, done chan error) {
+func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, crawledUrls map[string]string) func(deliveries <-chan amqp.Delivery, done chan error) {
 	return func(deliveries <-chan amqp.Delivery, done chan error) {
 		for delivery := range deliveries {
 			var url string
 
 			// Unmarshal message
 			if err := json.Unmarshal(delivery.Body, &url); err != nil {
-				log.Println("Error while deserializing payload: ", err.Error())
+				log.Println("Error while de-serializing payload: ", err.Error())
 				break
 			}
 
-			if shouldParse(url) {
+			if shouldParse(url, forbiddenExtensions, crawledUrls) {
 				log.Println(url, " should be parsed")
 				if err := publisher.PublishJson("", todoQueue, url); err != nil {
 					log.Println("Error while trying to publish to done queue: ", err.Error())
 				}
+				crawledUrls[url] = ""
 			}
 		}
 	}
 }
 
 // check if url contains not invalid stuff and if not already crawled
-func shouldParse(url string) bool {
-	return true // todo
+// todo plug memory cache to queue ?
+func shouldParse(url string, forbiddenExtensions []string, crawledUrls map[string]string) bool {
+	// make sure URL is not already managed
+	if _, ok := crawledUrls[url]; ok {
+		return false
+	}
+
+	// make sure URL does not contains forbidden extensions
+	for _, forbiddenExtension := range forbiddenExtensions {
+		if strings.HasSuffix(url, forbiddenExtension) {
+			return false
+		}
+	}
+
+	return true
 }
