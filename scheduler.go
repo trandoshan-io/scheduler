@@ -73,12 +73,15 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
             continue
          }
 
-         if shouldParse(url, forbiddenExtensions, crawledUrls) {
+         // clean / sanitize url
+         cleanUrl := strings.TrimSuffix(url, "/")
+
+         if shouldParse(cleanUrl, forbiddenExtensions, crawledUrls) {
             log.Println(url, " should be parsed")
             if err := publisher.PublishJson("", todoQueue, url); err != nil {
                log.Println("Error while trying to publish to done queue: ", err.Error())
             }
-            crawledUrls[url] = ""
+            crawledUrls[cleanUrl] = ""
          }
       }
    }
