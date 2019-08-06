@@ -70,7 +70,7 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
          // Unmarshal message
          if err := json.Unmarshal(delivery.Body, &url); err != nil {
             log.Println("Error while de-serializing payload: ", err.Error())
-            break
+            continue
          }
 
          if shouldParse(url, forbiddenExtensions, crawledUrls) {
