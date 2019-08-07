@@ -51,7 +51,7 @@ func main() {
    if err != nil {
       log.Fatal("Unable to create consumer: ", err.Error())
    }
-   if err := consumer.Consume(doneQueue, true, handleMessages(publisher, forbiddenExtensions, crawledUrls)); err != nil {
+   if err := consumer.Consume(doneQueue, false, handleMessages(publisher, forbiddenExtensions, crawledUrls)); err != nil {
       log.Fatal("Unable to consume message: ", err.Error())
    }
    log.Println("Consumer initialized successfully")
@@ -70,6 +70,7 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
          // Unmarshal message
          if err := json.Unmarshal(delivery.Body, &url); err != nil {
             log.Println("Error while de-serializing payload: ", err.Error())
+            _ = delivery.Reject(false)
             continue
          }
 
@@ -80,9 +81,12 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
             log.Println(url, " should be parsed")
             if err := publisher.PublishJson("", todoQueue, url); err != nil {
                log.Println("Error while trying to publish to done queue: ", err.Error())
+               _ = delivery.Reject(false)
             }
             crawledUrls[cleanUrl] = ""
          }
+
+         _ = delivery.Ack(false)
       }
    }
 }
