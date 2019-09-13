@@ -31,7 +31,7 @@ func main() {
 
    // build list of forbidden extensions
    var forbiddenExtensions = []string{
-      ".iso", ".xhtml", ".exe", ".css", ".img", ".png", ".jpg", ".jpeg", ".js", ".pdf", ".ico",
+      ".iso", ".xhtml", ".exe", ".css", ".img", ".png", ".jpg", ".jpeg", ".js", ".pdf", ".ico", ".gif",
    }
 
    prefetch, err := strconv.Atoi(os.Getenv("AMQP_PREFETCH"))
