@@ -94,6 +94,12 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
 // check if url contains not invalid stuff and if not already crawled
 // todo plug memory cache to queue ?
 func shouldParse(url string, forbiddenExtensions []string, crawledUrls map[string]string) bool {
+   // make sure URL is a valid .onion URL
+   //TODO: improve this check
+   if !strings.Contains(url, ".onion") {
+      return false
+   }
+
    // make sure URL is not already managed
    if _, ok := crawledUrls[url]; ok {
       return false
