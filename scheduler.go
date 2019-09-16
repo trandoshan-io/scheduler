@@ -5,7 +5,6 @@ import (
    "github.com/joho/godotenv"
    "github.com/streadway/amqp"
    tamqp "github.com/trandoshan-io/amqp"
-   "io/ioutil"
    "log"
    "net/http"
    "os"
@@ -23,8 +22,6 @@ const (
 func main() {
    log.Println("Initializing scheduler")
 
-   var crawledUrls = map[string]string{}
-
    // load .env
    if err := godotenv.Load(); err != nil {
       log.Fatal("Unable to load .env file: ", err.Error())
@@ -39,12 +36,7 @@ func main() {
 
    // un-marshal forbidden extensions
    var forbiddenExtensions []string
-   bodyBytes, err := ioutil.ReadAll(response.Body)
-   if err != nil {
-      log.Fatal("Unable to read response body: " + err.Error())
-   }
-   err = json.Unmarshal(bodyBytes, &forbiddenExtensions)
-   if err != nil {
+   if err = json.NewDecoder(response.Body).Decode(&forbiddenExtensions); err != nil {
       log.Fatal("Error while un-marshaling forbidden extensions: " + err.Error())
    }
 
@@ -67,7 +59,7 @@ func main() {
    if err != nil {
       log.Fatal("Unable to create consumer: ", err.Error())
    }
-   if err := consumer.Consume(doneQueue, false, handleMessages(publisher, forbiddenExtensions, crawledUrls)); err != nil {
+   if err := consumer.Consume(doneQueue, false, handleMessages(publisher, forbiddenExtensions)); err != nil {
       log.Fatal("Unable to consume message: ", err.Error())
    }
    log.Println("Consumer initialized successfully")
@@ -78,7 +70,7 @@ func main() {
    _ = consumer.Shutdown()
 }
 
-func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, crawledUrls map[string]string) func(deliveries <-chan amqp.Delivery, done chan error) {
+func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string) func(deliveries <-chan amqp.Delivery, done chan error) {
    return func(deliveries <-chan amqp.Delivery, done chan error) {
       for delivery := range deliveries {
          var url string
@@ -93,13 +85,13 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
          // clean / sanitize url
          cleanUrl := strings.TrimSuffix(url, "/")
 
-         if shouldParse(cleanUrl, forbiddenExtensions, crawledUrls) {
+         // make sure url is not crawled
+         if shouldParse(cleanUrl, forbiddenExtensions) {
             log.Println(url, " should be parsed")
             if err := publisher.PublishJson("", todoQueue, url); err != nil {
                log.Println("Error while trying to publish to done queue: ", err.Error())
                _ = delivery.Reject(false)
             }
-            crawledUrls[cleanUrl] = ""
          }
 
          _ = delivery.Ack(false)
@@ -108,24 +100,38 @@ func handleMessages(publisher tamqp.Publisher, forbiddenExtensions []string, cra
 }
 
 // check if url contains not invalid stuff and if not already crawled
-// todo plug memory cache to queue ?
-func shouldParse(url string, forbiddenExtensions []string, crawledUrls map[string]string) bool {
+func shouldParse(url string, forbiddenExtensions []string) bool {
    // make sure URL is a valid .onion URL
    //TODO: improve this check
    if !strings.Contains(url, ".onion") {
       return false
    }
 
-   // make sure URL is not already managed
-   if _, ok := crawledUrls[url]; ok {
-      return false
-   }
-
    // make sure URL does not contains forbidden extensions
+   //TODO: remove and let crawler do the check?
    for _, forbiddenExtension := range forbiddenExtensions {
       if strings.HasSuffix(url, forbiddenExtension) {
          return false
       }
+   }
+
+   // make sure URL is not already managed
+   // this is done in the last part because heaviest operation
+   resp, err := http.Get(os.Getenv("API_URI") + "/pages?url=" + url)
+   if err != nil {
+      log.Println("Error while checking if url " + url + " has been crawled. Assuming not")
+      return true
+   }
+
+   var body []map[string]interface{}
+   if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+      log.Println("Error while decoding json body. Assuming " + url + " has not been crawled: " + err.Error())
+      return true
+   }
+
+   // result: url has been crawled
+   if len(body) > 0 {
+      return false
    }
 
    return true
