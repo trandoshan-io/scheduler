@@ -5,7 +5,9 @@ import (
    "github.com/joho/godotenv"
    "github.com/streadway/amqp"
    tamqp "github.com/trandoshan-io/amqp"
+   "io/ioutil"
    "log"
+   "net/http"
    "os"
    "strconv"
    "strings"
@@ -29,10 +31,24 @@ func main() {
    }
    log.Println("Loaded .env file")
 
-   // build list of forbidden extensions
-   var forbiddenExtensions = []string{
-      ".iso", ".xhtml", ".exe", ".css", ".img", ".png", ".jpg", ".jpeg", ".js", ".pdf", ".ico", ".gif",
+   // load list of forbidden extensions
+   response, err := http.Get(os.Getenv("API_URI") + "/forbidden-extensions")
+   if err != nil {
+      log.Fatal("Unable to load forbidden extensions from API: " + err.Error())
    }
+
+   // un-marshal forbidden extensions
+   var forbiddenExtensions []string
+   bodyBytes, err := ioutil.ReadAll(response.Body)
+   if err != nil {
+      log.Fatal("Unable to read response body: " + err.Error())
+   }
+   err = json.Unmarshal(bodyBytes, &forbiddenExtensions)
+   if err != nil {
+      log.Fatal("Error while un-marshaling forbidden extensions: " + err.Error())
+   }
+
+   log.Println("Loaded " + strconv.Itoa(len(forbiddenExtensions)) + " forbidden extensions from the API")
 
    prefetch, err := strconv.Atoi(os.Getenv("AMQP_PREFETCH"))
    if err != nil {
