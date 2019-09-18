@@ -5,8 +5,7 @@ RUN apk update && apk upgrade && \
     apk add --no-cache bash git openssh
 
 RUN go get -v github.com/joho/godotenv && \
-    go get -v github.com/streadway/amqp && \
-    go get -v github.com/trandoshan-io/amqp
+    go get -v github.com/nats-io/nats.go/
 
 COPY . /app/
 WORKDIR /app
