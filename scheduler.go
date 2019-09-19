@@ -2,7 +2,6 @@ package main
 
 import (
    "encoding/json"
-   "github.com/joho/godotenv"
    "github.com/nats-io/nats.go"
    "log"
    "net/http"
@@ -19,12 +18,6 @@ const (
 
 func main() {
    log.Println("Initializing scheduler")
-
-   // load .env
-   if err := godotenv.Load(); err != nil {
-      log.Fatal("Unable to load .env file: ", err.Error())
-   }
-   log.Println("Loaded .env file")
 
    // load list of forbidden extensions
    response, err := http.Get(os.Getenv("API_URI") + "/forbidden-extensions")
