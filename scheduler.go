@@ -85,12 +85,6 @@ func handleMessages(nc *nats.Conn, forbiddenExtensions []string) func(*nats.Msg)
 
 // check if url contains not invalid stuff and if not already crawled
 func shouldParse(url string, forbiddenExtensions []string) bool {
-   // make sure URL is a valid .onion URL
-   //TODO: improve this check
-   if !strings.Contains(url, ".onion") {
-      return false
-   }
-
    // make sure URL does not contains forbidden extensions
    //TODO: remove and let crawler do the check?
    for _, forbiddenExtension := range forbiddenExtensions {
