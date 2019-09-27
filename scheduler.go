@@ -6,7 +6,6 @@ import (
    "log"
    "net/http"
    "os"
-   "strconv"
    "strings"
 )
 
@@ -19,20 +18,6 @@ const (
 func main() {
    log.Println("Initializing scheduler")
 
-   // load list of forbidden extensions
-   response, err := http.Get(os.Getenv("API_URI") + "/forbidden-extensions")
-   if err != nil {
-      log.Fatal("Unable to load forbidden extensions from API: " + err.Error())
-   }
-
-   // un-marshal forbidden extensions
-   var forbiddenExtensions []string
-   if err = json.NewDecoder(response.Body).Decode(&forbiddenExtensions); err != nil {
-      log.Fatal("Error while un-marshaling forbidden extensions: " + err.Error())
-   }
-
-   log.Println("Loaded " + strconv.Itoa(len(forbiddenExtensions)) + " forbidden extensions from the API")
-
    // connect to NATS server
    nc, err := nats.Connect(os.Getenv("NATS_URI"))
    if err != nil {
@@ -41,7 +26,7 @@ func main() {
    defer nc.Close()
 
    // initialize queue subscriber
-   if _, err := nc.QueueSubscribe(doneSubject, crawlingQueue, handleMessages(nc, forbiddenExtensions)); err != nil {
+   if _, err := nc.QueueSubscribe(doneSubject, crawlingQueue, handleMessages(nc)); err != nil {
       log.Fatal("Error while trying to subscribe to server: ", err)
    }
 
@@ -51,7 +36,7 @@ func main() {
    select {}
 }
 
-func handleMessages(nc *nats.Conn, forbiddenExtensions []string) func(*nats.Msg) {
+func handleMessages(nc *nats.Conn) func(*nats.Msg) {
    return func(msg *nats.Msg) {
       var url string
 
@@ -66,7 +51,7 @@ func handleMessages(nc *nats.Conn, forbiddenExtensions []string) func(*nats.Msg)
       cleanUrl := strings.TrimSuffix(url, "/")
 
       // make sure url is not crawled
-      if shouldParse(cleanUrl, forbiddenExtensions) {
+      if shouldParse(cleanUrl) {
          log.Println(url, " should be parsed")
 
          // publish url in todo queue
@@ -84,15 +69,7 @@ func handleMessages(nc *nats.Conn, forbiddenExtensions []string) func(*nats.Msg)
 }
 
 // check if url contains not invalid stuff and if not already crawled
-func shouldParse(url string, forbiddenExtensions []string) bool {
-   // make sure URL does not contains forbidden extensions
-   //TODO: remove and let crawler do the check?
-   for _, forbiddenExtension := range forbiddenExtensions {
-      if strings.HasSuffix(url, forbiddenExtension) {
-         return false
-      }
-   }
-
+func shouldParse(url string) bool {
    // make sure URL is not already managed
    // this is done in the last part because heaviest operation
    resp, err := http.Get(os.Getenv("API_URI") + "/pages?url=" + url)
