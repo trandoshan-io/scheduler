@@ -1,6 +1,8 @@
 # scheduler
 
+[![Build Status](https://travis-ci.org/trandoshan-io/scheduler.svg?branch=master)](https://travis-ci.org/trandoshan-io/scheduler)
 [![Go Report Card](https://goreportcard.com/badge/github.com/trandoshan-io/scheduler)](https://goreportcard.com/report/github.com/trandoshan-io/scheduler)
+[![Maintainability](https://api.codeclimate.com/v1/badges/25d591c24d83b929e63f/maintainability)](https://codeclimate.com/github/trandoshan-io/scheduler/maintainability)
 
 Scheduler is a Go written program designed to orchestrate resource parsing
 
