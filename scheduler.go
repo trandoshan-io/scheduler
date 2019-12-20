@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
+	"github.com/elastic/go-elasticsearch/v7"
 	"github.com/nats-io/nats.go"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 )
@@ -26,8 +27,15 @@ func main() {
 	}
 	defer nc.Close()
 
+	// Connect to elasticsearch
+	es, err := elasticsearch.NewDefaultClient()
+	if err != nil {
+		log.Fatalf("Error creating elasticsearch client: %s", err)
+	}
+	log.Printf("Elasticsearch client successfully created")
+
 	// initialize queue subscriber
-	if _, err := nc.QueueSubscribe(doneSubject, crawlingQueue, handleMessages(nc)); err != nil {
+	if _, err := nc.QueueSubscribe(doneSubject, crawlingQueue, handleMessages(nc, es)); err != nil {
 		log.Fatalf("Error while trying to subscribe to server: %s", err)
 	}
 
@@ -37,7 +45,7 @@ func main() {
 	select {}
 }
 
-func handleMessages(nc *nats.Conn) func(*nats.Msg) {
+func handleMessages(nc *nats.Conn, es *elasticsearch.Client) func(*nats.Msg) {
 	return func(msg *nats.Msg) {
 		var url string
 
@@ -52,7 +60,7 @@ func handleMessages(nc *nats.Conn) func(*nats.Msg) {
 		cleanUrl := strings.TrimSuffix(url, "/")
 
 		// make sure url is not crawled
-		if shouldParse(cleanUrl) {
+		if shouldCrawl(es, cleanUrl) {
 			log.Printf("%s should be parsed", url)
 
 			// publish url in todo queue
@@ -69,25 +77,42 @@ func handleMessages(nc *nats.Conn) func(*nats.Msg) {
 	}
 }
 
-// check if url contains not invalid stuff and if not already crawled
-func shouldParse(url string) bool {
-	// make sure URL is not already managed
-	resp, err := http.Get(fmt.Sprintf("%s/pages?url=%s", os.Getenv("API_URI"), url))
-	if err != nil {
-		log.Printf("Error while checking if url %s has been crawled. Assuming not", url)
-		return true
+// check if resource should be scheduled for crawling
+func shouldCrawl(es *elasticsearch.Client, url string) bool {
+	var buf bytes.Buffer
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"match": map[string]interface{}{
+				"url": url,
+			},
+		},
 	}
-
-	var body []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		log.Printf("Error while decoding json body. Assuming %s has not been crawled: %s", url, err)
-		return true
-	}
-
-	// result: url has been crawled
-	if len(body) > 0 {
+	if err := json.NewEncoder(&buf).Encode(query); err != nil {
+		log.Printf("Error encoding query: %s", err)
 		return false
 	}
 
-	return true
+	// Perform the search request.
+	res, err := es.Search(
+		es.Search.WithContext(context.Background()),
+		es.Search.WithIndex("resources"),
+		es.Search.WithBody(&buf),
+		es.Search.WithTrackTotalHits(true),
+		es.Search.WithPretty(),
+	)
+	if err != nil {
+		log.Printf("Error getting response: %s", err)
+		return false
+	}
+	if res.IsError() {
+		log.Printf("Error getting response: %s", err)
+		return false
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		log.Fatalf("Error parsing the response body: %s", err)
+	}
+
+	return len(r["hits"].(map[string]interface{})["hits"].([]interface{})) == 0
 }
